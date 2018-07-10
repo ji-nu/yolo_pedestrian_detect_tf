@@ -3,7 +3,54 @@ import cv2
 import numpy as np
 import config as cfg
 import sys
+import threading
 
+import RPi.GPIO as GPIO
+import time
+
+person_num = 0
+
+class Segment(object):
+    def __init__(self):
+        GPIO.setmode(GPIO.BCM)
+        self.segments = (11, 4, 23, 8, 7, 10, 18, 25)
+        self.digits = (22, 27, 17, 24)
+        
+        for seg in self.segments:
+            GPIO.setup(seg, GPIO.OUT)
+            GPIO.output(seg, 1)
+
+        for dig in self.digits:
+            GPIO.setup(dig, GPIO.OUT)
+            GPIO.output(dig, 0)
+        
+        self.num = {' ':(1,1,1,1,1,1,1),
+                '0':(0,0,0,0,0,0,1),
+                '1':(1,0,0,1,1,1,1),
+                '2':(0,0,1,0,0,1,0),
+                '3':(0,0,0,0,1,1,0),
+                '4':(1,0,0,1,1,0,0),
+                '5':(0,1,0,0,1,0,0),
+                '6':(0,1,0,0,0,0,0),
+                '7':(0,0,0,1,1,1,1),
+                '8':(0,0,0,0,0,0,0),
+                '9':(0,0,0,0,1,0,0)}
+
+    def __del__(self):
+        GPIO.cleanup()
+
+    def set_num(self):
+        if not (0 <= person_num < 10000):
+            return
+
+        while True:
+            s = str(person_num).rjust(4, '0')
+            for digit in range(4):
+                for loop in range(0,7):
+                    GPIO.output(self.segments[loop], self.num[s[digit]][loop])
+                GPIO.output(self.digits[digit], 1)
+                time.sleep(0.001)
+                GPIO.output(self.digits[digit], 0)
 
 class Detector(object):
 
@@ -154,12 +201,14 @@ class Detector(object):
 
     def camera_detector(self, cap, wait=10):
         ret, _ = cap.read()
+        global person_num
 
         while ret:
             ret, frame = cap.read()
             result = self.detect(frame)
             person = list(filter(lambda r: r[0] == 'person', result))
-            print(len(person))
+            person_num = len(person)
+            print('person num %d' % person_num)
             self.draw_result(frame, person)
             cv2.imshow('Camera', frame)
             cv2.waitKey(wait)
@@ -180,8 +229,16 @@ if __name__ == '__main__':
     # detect from camera
     # detector = Detector(load_graph(model_path))
     detector = Detector()
+    segment = Segment()
+
     cap = cv2.VideoCapture(0)
-    detector.camera_detector(cap)
+    t_yolo = threading.Thread(target=detector.camera_detector, args=(cap, ))
+    t_segment = threading.Thread(target=segment.set_num)
+    t_yolo.start()
+    t_segment.start()
+    t_yolo.join()
+    t_segment.join()
+    #detector.camera_detector(cap)
 
     # detect from image file
     # imname = 'test/person.jpg'
