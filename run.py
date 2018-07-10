@@ -4,23 +4,16 @@ import numpy as np
 import config as cfg
 import sys
 
-def load_graph(frozen_graph_file):
-    with tf.gfile.GFile(frozen_graph_file, 'rb') as f:
-        graph_def = tf.GraphDef()
-        graph_def.ParseFromString(f.read())
-
-    with tf.Graph().as_default() as graph:
-        tf.import_graph_def(graph_def, name='YOLO')
-
-    return graph
 
 class Detector(object):
 
-    def __init__(self, graph):
-        self.graph = graph
-        self.input_node = graph.get_tensor_by_name('YOLO/images:0')
-        self.output_node = graph.get_tensor_by_name('YOLO/yolo/fc_36/BiasAdd:0')
-        self.sess = tf.Session(graph=self.graph)
+    def __init__(self):
+        self.sess = tf.Session()
+        self.saver = tf.train.import_meta_graph('./model/model.ckpt.meta')
+        self.saver.restore(self.sess, tf.train.latest_checkpoint('./model/'))
+        self.graph = tf.get_default_graph()
+        self.input_node = self.graph.get_tensor_by_name('images:0')
+        self.output_node = self.graph.get_tensor_by_name('yolo/fc_36/BiasAdd:0')
 
         self.classes = cfg.CLASSES
         self.num_class = len(self.classes)
@@ -57,16 +50,11 @@ class Detector(object):
 
         result = self.detect_from_cvmat(inputs)[0]
 
-        print(len(result))
-
         for i in range(len(result)):
             result[i][1] *= (1.0 * img_w / self.image_size)
             result[i][2] *= (1.0 * img_h / self.image_size)
             result[i][3] *= (1.0 * img_w / self.image_size)
             result[i][4] *= (1.0 * img_h / self.image_size)
-
-        for r in result:
-            print(r)
 
         return result
 
@@ -153,7 +141,6 @@ class Detector(object):
                  boxes_filtered[i][2],
                  boxes_filtered[i][3],
                  probs_filtered[i]])
-        print(result)
 
         return result
 
@@ -171,7 +158,9 @@ class Detector(object):
         while ret:
             ret, frame = cap.read()
             result = self.detect(frame)
-            self.draw_result(frame, result)
+            person = list(filter(lambda r: r[0] == 'person', result))
+            print(len(person))
+            self.draw_result(frame, person)
             cv2.imshow('Camera', frame)
             cv2.waitKey(wait)
 
@@ -188,10 +177,9 @@ class Detector(object):
 
 if __name__ == '__main__':
 
-    model_path = sys.argv[1]
-
     # detect from camera
-    detector = Detector(load_graph(model_path))
+    # detector = Detector(load_graph(model_path))
+    detector = Detector()
     cap = cv2.VideoCapture(0)
     detector.camera_detector(cap)
 
